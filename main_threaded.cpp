@@ -66,9 +66,9 @@ int main(int argc, char *argv[]) {
     unknown_fens_vector.push_back(fen);
   };
 
-  std::atomic<size_t> known_fens = 0;
-  std::atomic<size_t> unknown_fens = 0;
-  std::atomic<size_t> scored_moves = 0;
+  std::atomic<size_t> known_fens{0};
+  std::atomic<size_t> unknown_fens{0};
+  std::atomic<size_t> scored_moves{0};
 
   // Create a thread pool
   ThreadPool pool(num_threads);
