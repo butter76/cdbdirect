@@ -33,11 +33,13 @@ static int backprop_score_for_scan(int child_score) {
 static void print_match(const std::string &fen,
                         const std::pair<std::string, int> &best,
                         std::uint64_t matched_count,
-                        std::uint64_t total_count) {
+                        std::uint64_t total_count,
+                        bool is_weird) {
   double frac = total_count ? (static_cast<double>(matched_count) / static_cast<double>(total_count)) : 0.0;
   std::cout << fen << " | best " << best.first << " = " << best.second
             << " | out=" << matched_count << "/" << total_count
             << " (" << std::fixed << std::setprecision(6) << (frac * 100.0) << "%)"
+            << (is_weird ? " | WEIRD" : "")
             << std::endl;
 }
 
@@ -99,6 +101,58 @@ static bool obeys_standard_castling_constraints(const std::string &fen) {
   return true;
 }
 
+static bool is_weird_position(const std::string &fen) {
+  // Extract board field
+  size_t p1 = fen.find(' ');
+  if (p1 == std::string::npos) return false;
+  const std::string board = fen.substr(0, p1);
+
+  // Fill squares a8..h1
+  char squares[64];
+  std::memset(squares, ' ', sizeof(squares));
+  int idx = 0;
+  for (char c : board) {
+    if (c == '/') continue;
+    if (c >= '1' && c <= '8') {
+      idx += c - '0';
+    } else if (std::isalpha(static_cast<unsigned char>(c))) {
+      if (idx >= 0 && idx < 64) squares[idx++] = c;
+    }
+  }
+
+  int total_queens = 0;
+  int white_knights = 0, black_knights = 0;
+  int white_rooks = 0, black_rooks = 0;
+  int white_bishop_light = 0, white_bishop_dark = 0;
+  int black_bishop_light = 0, black_bishop_dark = 0;
+
+  for (int i = 0; i < 64; ++i) {
+    char c = squares[i];
+    if (c == ' ') continue;
+    int row = i / 8;      // 0..7, 0 is rank 8
+    int col = i % 8;      // 0..7, 0 is file a
+    bool is_light = ((row + col) % 2 == 0);
+    switch (c) {
+      case 'Q': case 'q': total_queens++; break;
+      case 'N': white_knights++; break;
+      case 'n': black_knights++; break;
+      case 'R': white_rooks++; break;
+      case 'r': black_rooks++; break;
+      case 'B': if (is_light) white_bishop_light++; else white_bishop_dark++; break;
+      case 'b': if (is_light) black_bishop_light++; else black_bishop_dark++; break;
+      default: break;
+    }
+  }
+
+  bool bishops_same_color = (white_bishop_light >= 2) || (white_bishop_dark >= 2) ||
+                            (black_bishop_light >= 2) || (black_bishop_dark >= 2);
+  bool too_many_queens = (total_queens >= 3);
+  bool three_knights_or_rooks = (white_knights >= 3) || (black_knights >= 3) ||
+                                (white_rooks >= 3) || (black_rooks >= 3);
+
+  return bishops_same_color || too_many_queens || three_knights_or_rooks;
+}
+
 int main() {
   // Open DB directly here because we need iterator access
   BlockBasedTableOptions table_options;
@@ -154,22 +208,29 @@ int main() {
     if (!have_move) continue;
 
     // Filter by threshold and exclude TB draw/stalemate (=0)
-    if (best_move_score.second > 250 || best_move_score.second < -250) {
-      // Reconstruct original hex from key without leading 'h'
-      std::string hex_key = bin2hex(k.ToString().substr(1));
-      std::string fen = cbhexfen2fen(hex_key);
-      // Filter out positions with 7 or fewer pieces
-      if (count_pieces_in_fen_board(fen) <= 7) {
-        continue;
-      }
-      // Enforce classical castling constraints (exclude Chess960-style rights)
-      if (!obeys_standard_castling_constraints(fen)) {
-        continue;
-      }
-      // Output position and best move with eval
-      ++matched_positions;
-      print_match(fen, best_move_score, matched_positions, total_positions);
+    // Reconstruct original hex from key without leading 'h'
+    std::string hex_key = bin2hex(k.ToString().substr(1));
+    std::string fen = cbhexfen2fen(hex_key);
+
+    // Filter out positions with 7 or fewer pieces
+    if (count_pieces_in_fen_board(fen) <= 7) {
+      continue;
     }
+    // Enforce classical castling constraints (exclude Chess960-style rights)
+    if (!obeys_standard_castling_constraints(fen)) {
+      continue;
+    }
+
+    bool is_extreme_eval = (best_move_score.second > 250 || best_move_score.second < -250);
+    bool is_weird = is_weird_position(fen);
+    if (!(is_extreme_eval || is_weird)) {
+      continue;
+    }
+
+    // Output position and best move with eval
+    ++matched_positions;
+    // Only add WEIRD label if not an extreme eval
+    print_match(fen, best_move_score, matched_positions, total_positions, is_weird && !is_extreme_eval);
   }
 
   if (!it->status().ok()) {
