@@ -2,7 +2,7 @@
 TERARKDBROOT = ../terarkdb
 
 # Needs to point to the path of the cdb dump
-CHESSDB_PATH = ../data/chessdb/chess-20250608/data
+CHESSDB_PATH = /ephemeral/chessdb-data/data/chessdb/chess-20250608/data
 
 # example executables
 EXE1 = cdbdirect

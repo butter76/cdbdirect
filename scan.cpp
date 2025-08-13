@@ -34,12 +34,11 @@ static void print_match(const std::string &fen,
                         const std::pair<std::string, int> &best,
                         std::uint64_t matched_count,
                         std::uint64_t total_count,
-                        bool is_weird) {
-  double frac = total_count ? (static_cast<double>(matched_count) / static_cast<double>(total_count)) : 0.0;
-  std::cout << fen << " | best " << best.first << " = " << best.second
-            << " | out=" << matched_count << "/" << total_count
-            << " (" << std::fixed << std::setprecision(6) << (frac * 100.0) << "%)"
-            << (is_weird ? " | WEIRD" : "")
+                        bool is_weird,
+                        int children_count) {
+  std::cout << fen << "|" << best.first << "=" << best.second
+            << "|c" << children_count
+            << (is_weird ? "|WEIRD" : "")
             << std::endl;
 }
 
@@ -173,7 +172,12 @@ int main() {
   // Iterate over all entries whose key starts with 'h' (hash entries)
   std::uint64_t total_positions = 0;
   std::uint64_t matched_positions = 0;
+  std::uint64_t entry_index = 0;
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    // Process only every 5th entry (0, 5, 10, ...)
+    if ((entry_index++ % 5) != 0) {
+      continue;
+    }
     const Slice k = it->key();
     if (k.size() == 0 || k.data()[0] != 'h') {
       continue; // skip non-hash records
@@ -191,12 +195,14 @@ int main() {
     int ply_distance = -1;
     bool have_move = false;
     std::pair<std::string, int> best_move_score;
+    int children_count = 0;
 
     for (const auto &p : scoredMoves) {
       if (p.first == "a0a0") {
         ply_distance = std::stoi(p.second);
         continue;
       }
+      ++children_count;
       int child = std::stoi(p.second);
       int eval = backprop_score_for_scan(child);
       if (!have_move || eval > best_move_score.second) {
@@ -230,7 +236,7 @@ int main() {
     // Output position and best move with eval
     ++matched_positions;
     // Only add WEIRD label if not an extreme eval
-    print_match(fen, best_move_score, matched_positions, total_positions, is_weird && !is_extreme_eval);
+    print_match(fen, best_move_score, matched_positions, total_positions, is_weird && !is_extreme_eval, children_count);
   }
 
   if (!it->status().ok()) {
