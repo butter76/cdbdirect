@@ -152,6 +152,65 @@ static bool is_weird_position(const std::string &fen) {
   return bishops_same_color || too_many_queens || three_knights_or_rooks;
 }
 
+static void compute_material_totals(const std::string &fen,
+                                    int &white_total,
+                                    int &black_total) {
+  size_t p1 = fen.find(' ');
+  if (p1 == std::string::npos) { white_total = black_total = 0; return; }
+  const std::string board = fen.substr(0, p1);
+
+  char squares[64];
+  std::memset(squares, ' ', sizeof(squares));
+  int idx = 0;
+  for (char c : board) {
+    if (c == '/') continue;
+    if (c >= '1' && c <= '8') {
+      idx += c - '0';
+    } else if (std::isalpha(static_cast<unsigned char>(c))) {
+      if (idx >= 0 && idx < 64) squares[idx++] = c;
+    }
+  }
+
+  auto piece_value = [](char p) -> int {
+    switch (p) {
+      case 'P': case 'p': return 1;
+      case 'N': case 'n': return 3;
+      case 'B': case 'b': return 3;
+      case 'R': case 'r': return 5;
+      case 'Q': case 'q': return 9;
+      default: return 0; // kings or empty squares
+    }
+  };
+
+  int w = 0, b = 0;
+  for (int i = 0; i < 64; ++i) {
+    char c = squares[i];
+    if (c == ' ') continue;
+    int val = piece_value(c);
+    if (std::isupper(static_cast<unsigned char>(c))) w += val; else b += val;
+  }
+  white_total = w;
+  black_total = b;
+}
+
+static bool winning_side_has_less_material(const std::string &fen, int eval_parent) {
+  if (eval_parent == 0) return false;
+  // Determine side to move from FEN
+  size_t p1 = fen.find(' ');
+  if (p1 == std::string::npos) return false;
+  size_t p2 = fen.find(' ', p1 + 1);
+  if (p2 == std::string::npos) return false;
+  char stm = fen[p1 + 1]; // 'w' or 'b'
+
+  int w_mat = 0, b_mat = 0;
+  compute_material_totals(fen, w_mat, b_mat);
+
+  bool white_winning = (eval_parent > 0 ? (stm == 'w') : (stm != 'w'));
+  int winner_mat = white_winning ? w_mat : b_mat;
+  int loser_mat  = white_winning ? b_mat : w_mat;
+  return winner_mat < loser_mat;
+}
+
 int main() {
   // Open DB directly here because we need iterator access
   BlockBasedTableOptions table_options;
@@ -175,7 +234,8 @@ int main() {
   std::uint64_t entry_index = 0;
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
     // Process only every 5th entry (0, 5, 10, ...)
-    if ((entry_index++ % 5) != 0) {
+    auto entry = entry_index++;
+    if ((entry % 3) != 0) {
       continue;
     }
     const Slice k = it->key();
@@ -229,7 +289,11 @@ int main() {
 
     bool is_extreme_eval = (best_move_score.second > 250 || best_move_score.second < -250);
     bool is_weird = is_weird_position(fen);
-    if (!(is_extreme_eval || is_weird)) {
+    bool is_underdog_winning = winning_side_has_less_material(fen, best_move_score.second);
+    bool is_lucky = entry % 99 == 0;
+
+    bool allow = is_weird || ((is_underdog_winning || is_lucky) && is_extreme_eval);
+    if (!allow) {
       continue;
     }
 
