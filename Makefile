@@ -2,15 +2,20 @@
 TERARKDBROOT = ../terarkdb
 
 # Needs to point to the path of the cdb dump
-CHESSDB_PATH = /ephemeral/chessdb-data/data/chessdb/chess-20250608/data
+CHESSDB_PATH = /home/ubuntu/chessdb-data/chess-20251115/data
+
+# chess-library (single-header, used by tactical scanner)
+CHESS_LIB = ../CatGPT/cpp/external/chess-library/include
 
 # example executables
 EXE1 = cdbdirect
 EXE2 = cdbdirect_threaded
 EXE3 = cdbscan
+EXE4 = cdb_tactical
 EXESRC1 = main.cpp
 EXESRC2 = main_threaded.cpp
 EXESRC3 = scan.cpp
+EXESRC4 = tactical_scan.cpp
 
 # library to be used by the exe and other applications
 LIBTARGET = libcdbdirect.a
@@ -19,7 +24,7 @@ LIBHEADER = cdbdirect.h
 # sources and headers to build the library
 LIBSRC = fen2cdb.cpp cdbdirect.cpp
 LIBOBJ = $(patsubst %.cpp, %.o, $(LIBSRC))
-HEADERS = $(LIBHEADER) fen2cdb.h external/threadpool.hpp
+HEADERS = $(LIBHEADER) fen2cdb.h scan_utils.h external/threadpool.hpp
 
 # tools
 CXX = g++
@@ -35,7 +40,7 @@ LIBS = -lterarkdb -lterark-zip-r -lboost_fiber -lboost_context -ltcmalloc -pthre
 
 .PHONY = all lib clean format
 
-all: $(EXE1) $(EXE2) $(EXE3) lib
+all: $(EXE1) $(EXE2) $(EXE3) $(EXE4) lib
 
 lib: $(LIBTARGET)
 
@@ -48,6 +53,9 @@ $(EXE2): $(EXESRC2) $(LIBTARGET) $(HEADERS)
 $(EXE3): $(EXESRC3) $(LIBTARGET) $(HEADERS)
 	$(CXX) $(CXXFLAGS) $(INCFLAGS) -o $(EXE3) $(EXESRC3) $(LIBTARGET) $(LDFLAGS) $(LIBS)
 
+$(EXE4): $(EXESRC4) $(LIBTARGET) $(HEADERS)
+	$(CXX) $(CXXFLAGS) $(INCFLAGS) -I$(CHESS_LIB) -o $(EXE4) $(EXESRC4) $(LIBTARGET) $(LDFLAGS) $(LIBS)
+
 %.o: %.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) $(INCFLAGS) -c $< -o $@
 
@@ -58,4 +66,4 @@ format:
 	clang-format -i $(EXESRC1) $(EXESRC2) $(EXESRC3) $(LIBSRC) $(HEADERS) $(LIBHEADER)
 
 clean:
-	rm -f $(EXE1) $(EXE2) $(LIBTARGET) $(LIBOBJ)
+	rm -f $(EXE1) $(EXE2) $(EXE3) $(EXE4) $(LIBTARGET) $(LIBOBJ)

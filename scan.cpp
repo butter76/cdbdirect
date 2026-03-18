@@ -16,19 +16,9 @@
 
 #include "cdbdirect.h"
 #include "fen2cdb.h"
+#include "scan_utils.h"
 
 using namespace TERARKDB_NAMESPACE;
-
-// Reuse the same backprop logic as in cdbdirect.cpp
-static int backprop_score_for_scan(int child_score) {
-  if (child_score == -30001)
-    return 0;                       // TB draw/stalemate
-  if (child_score >= 15000)
-    return -child_score + 1;        // forced loss for side to move
-  if (child_score <= -15000)
-    return -child_score - 1;        // forced win for side to move
-  return -child_score;              // regular eval
-}
 
 static void print_match(const std::string &fen,
                         const std::pair<std::string, int> &best,
@@ -40,64 +30,6 @@ static void print_match(const std::string &fen,
             << "|c" << children_count
             << (is_weird ? "|WEIRD" : "")
             << std::endl;
-}
-
-static int count_pieces_in_fen_board(const std::string &fen) {
-  size_t space_pos = fen.find(' ');
-  const std::string board = fen.substr(0, space_pos == std::string::npos ? fen.size() : space_pos);
-  int count = 0;
-  for (char c : board) {
-    if (std::isalpha(static_cast<unsigned char>(c))) ++count;
-  }
-  return count;
-}
-
-static bool obeys_standard_castling_constraints(const std::string &fen) {
-  // Split FEN fields
-  size_t p1 = fen.find(' ');
-  if (p1 == std::string::npos) return false;
-  size_t p2 = fen.find(' ', p1 + 1);
-  if (p2 == std::string::npos) return false;
-  size_t p3 = fen.find(' ', p2 + 1);
-  if (p3 == std::string::npos) return false;
-  const std::string board = fen.substr(0, p1);
-  const std::string castling = fen.substr(p2 + 1, p3 - (p2 + 1));
-
-  // Parse board into 64 squares, a8..h1
-  char squares[64];
-  std::memset(squares, ' ', sizeof(squares));
-  int idx = 0;
-  for (char c : board) {
-    if (c == '/') continue;
-    if (c >= '1' && c <= '8') {
-      idx += c - '0';
-    } else if (std::isalpha(static_cast<unsigned char>(c))) {
-      if (idx >= 0 && idx < 64) squares[idx++] = c;
-    }
-  }
-
-  auto piece_at = [&](char file, int rank) -> char {
-    int col = file - 'a';
-    int row = 8 - rank; // rank 8 -> row 0, rank 1 -> row 7
-    int i = row * 8 + col;
-    if (i < 0 || i >= 64) return ' ';
-    return squares[i];
-  };
-
-  // Only enforce constraints for flags that are present
-  if (castling.find('K') != std::string::npos) {
-    if (piece_at('e', 1) != 'K' || piece_at('h', 1) != 'R') return false;
-  }
-  if (castling.find('Q') != std::string::npos) {
-    if (piece_at('e', 1) != 'K' || piece_at('a', 1) != 'R') return false;
-  }
-  if (castling.find('k') != std::string::npos) {
-    if (piece_at('e', 8) != 'k' || piece_at('h', 8) != 'r') return false;
-  }
-  if (castling.find('q') != std::string::npos) {
-    if (piece_at('e', 8) != 'k' || piece_at('a', 8) != 'r') return false;
-  }
-  return true;
 }
 
 static bool is_weird_position(const std::string &fen) {
@@ -264,7 +196,7 @@ int main() {
       }
       ++children_count;
       int child = std::stoi(p.second);
-      int eval = backprop_score_for_scan(child);
+      int eval = backprop_score(child);
       if (!have_move || eval > best_move_score.second) {
         best_move_score = {p.first, eval};
         have_move = true;
